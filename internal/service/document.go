@@ -1,9 +1,10 @@
 package service
 
 import (
-	"slices"
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,17 +32,26 @@ type sessionRepo interface {
 	GetByToken(ctx context.Context, token string) (*models.Session, error)
 }
 
+type cache interface {
+	Get(ctx context.Context, key string) (any, bool)
+	Set(ctx context.Context, key string, value any)
+	Delete(ctx context.Context, key string)
+	DeletePrefix(ctx context.Context, prefix string)
+}
+
 type DocsService struct {
 	docsRepo    docsRepository
 	fileStorage fileStorage
 	sessions    sessionRepo
+	cache       cache
 }
 
-func NewDocsService(docRepo docsRepository, fileStorage fileStorage, sessions sessionRepository) *DocsService {
+func NewDocsService(docRepo docsRepository, fileStorage fileStorage, sessions sessionRepo, c cache) *DocsService {
 	return &DocsService{
 		docsRepo:    docRepo,
 		fileStorage: fileStorage,
 		sessions:    sessions,
+		cache:       c,
 	}
 }
 
@@ -78,6 +88,9 @@ func (s *DocsService) Create(ctx context.Context, meta *models.Document, fileNam
 		return nil, err
 	}
 
+	s.cache.DeletePrefix(ctx, fmt.Sprintf("list:%s", session.Login))
+	s.cache.Set(ctx, fmt.Sprintf("doc:%s", doc.ID), doc)
+
 	return doc, nil
 }
 
@@ -90,7 +103,20 @@ func (s *DocsService) List(ctx context.Context, token, login, key, value string,
 		return nil, ErrAccessDenied
 	}
 
-	return s.docsRepo.List(ctx, session.Login, login, key, value, limit)
+	cacheKey := fmt.Sprintf("list:%s:%s:%s:%s:%d", session.Login, login, key, value, limit)
+	if cached, ok := s.cache.Get(ctx, cacheKey); ok {
+		if docs, ok := cached.([]models.Document); ok {
+			return docs, nil
+		}
+	}
+
+	docs, err := s.docsRepo.List(ctx, session.Login, login, key, value, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	s.cache.Set(ctx, cacheKey, docs)
+	return docs, nil
 }
 
 func (s *DocsService) GetByID(ctx context.Context, id, token string) (*models.Document, error) {
@@ -102,6 +128,16 @@ func (s *DocsService) GetByID(ctx context.Context, id, token string) (*models.Do
 		return nil, ErrAccessDenied
 	}
 
+	cacheKey := fmt.Sprintf("doc:%s", id)
+	if cached, ok := s.cache.Get(ctx, cacheKey); ok {
+		if doc, ok := cached.(*models.Document); ok {
+			if doc.Public || doc.OwnerLogin == session.Login || slices.Contains(doc.Grant, session.Login) {
+				return doc, nil
+			}
+			return nil, ErrAccessDenied
+		}
+	}
+
 	doc, err := s.docsRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -110,11 +146,8 @@ func (s *DocsService) GetByID(ctx context.Context, id, token string) (*models.Do
 		return nil, ErrNotFound
 	}
 
-	if doc.Public || doc.OwnerLogin == session.Login {
-		return doc, nil
-	}
-
-	if slices.Contains(doc.Grant, session.Login) {
+	if doc.Public || doc.OwnerLogin == session.Login || slices.Contains(doc.Grant, session.Login) {
+		s.cache.Set(ctx, cacheKey, doc)
 		return doc, nil
 	}
 
@@ -149,6 +182,9 @@ func (s *DocsService) Delete(ctx context.Context, id, token string) error {
 	if doc.File && doc.FilePath != "" {
 		_ = s.fileStorage.Delete(doc.FilePath)
 	}
+
+	s.cache.Delete(ctx, fmt.Sprintf("doc:%s", id))
+	s.cache.DeletePrefix(ctx, fmt.Sprintf("list:%s", session.Login))
 
 	return nil
 }

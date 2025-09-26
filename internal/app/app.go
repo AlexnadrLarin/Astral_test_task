@@ -18,6 +18,7 @@ import (
 	logger "docs_storage/pkg/logger"
 	repository "docs_storage/internal/repository"
 	storage "docs_storage/internal/storage"
+	cache "docs_storage/internal/cache"
 )
 
 type App struct {
@@ -59,8 +60,9 @@ func (a *App) Run() error {
 	sessionRepo := repository.NewSessionRepo(postgres.Pool)
 
 	fileStorage := storage.NewLocalFileStorage("/app/files")
+	cache := cache.NewLFUCache(a.config.Cache.capacity)
 
-	docsSvc := service.NewDocsService(docsRepo, fileStorage, sessionRepo)
+	docsSvc := service.NewDocsService(docsRepo, fileStorage, sessionRepo, cache)
 	authSvc := service.NewAuthService(userRepo, sessionRepo, a.config.Admin.token)
 
 	docsHandler := handlers.NewDocsHandler(docsSvc, a.logger)

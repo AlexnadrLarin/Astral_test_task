@@ -9,6 +9,7 @@ type Config struct {
 	Server   ServerConfig
 	Postgres PostgresConfig
 	Admin    AdminConfig
+	Cache    CacheConfig
 }
 
 type ServerConfig struct {
@@ -28,6 +29,10 @@ type PostgresConfig struct {
 
 type AdminConfig struct {
 	token string
+}
+
+type CacheConfig struct {
+	capacity int
 }
 
 func LoadConfig() (*Config, error) {
@@ -70,6 +75,12 @@ func loadEnvVars(config *Config) {
 	}
 	if envVal := os.Getenv("POSTGRES_SSL_MODE"); envVal != "" {
 		config.Postgres.SSLMode = envVal
+	}
+
+	if envVal := os.Getenv("CACHE_CAPACITY"); envVal != "" {
+		if capacity, err := strconv.Atoi(envVal); err == nil {
+			config.Cache.capacity = capacity
+		}
 	}
 
 	if envVal := os.Getenv("ADMIN_TOKEN"); envVal != "" {
