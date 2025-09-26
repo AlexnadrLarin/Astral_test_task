@@ -1,16 +1,17 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
-	"context"
 
 	"github.com/gorilla/mux"
 
 	models "docs_storage/internal/models"
 	"docs_storage/internal/utils"
+	"docs_storage/pkg/logger"
 )
 
 type docsService interface {
@@ -21,34 +22,39 @@ type docsService interface {
 }
 
 type DocsHandler struct {
-	svc docsService
+	svc    docsService
+	logger *logger.Logger
 }
 
-func NewDocsHandler(svc docsService) *DocsHandler {
-	return &DocsHandler{svc: svc}
+func NewDocsHandler(svc docsService, log *logger.Logger) *DocsHandler {
+	return &DocsHandler{svc: svc, logger: log}
 }
 
 func (h *DocsHandler) HandleUploadDoc(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	if token == "" {
-		http.Error(w, "token required", http.StatusBadRequest)
+		h.logger.Error.Print("upload attempt without token")
+		utils.WriteJSON(w, http.StatusBadRequest, utils.ErrorResp("token required"))
 		return
 	}
 
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		http.Error(w, "cannot parse form", http.StatusBadRequest)
+		h.logger.Error.Printf("failed to parse multipart form: %v", err)
+		utils.WriteJSON(w, http.StatusBadRequest, utils.ErrorResp("cannot parse form"))
 		return
 	}
 
 	metaPart := r.FormValue("meta")
 	if metaPart == "" {
-		http.Error(w, "meta is required", http.StatusBadRequest)
+		h.logger.Error.Print("upload attempt without meta")
+		utils.WriteJSON(w, http.StatusBadRequest, utils.ErrorResp("meta is required"))
 		return
 	}
 
 	var meta models.Document
 	if err := json.Unmarshal([]byte(metaPart), &meta); err != nil {
-		http.Error(w, "invalid meta json", http.StatusBadRequest)
+		h.logger.Error.Printf("invalid meta json: %v", err)
+		utils.WriteJSON(w, http.StatusBadRequest, utils.ErrorResp("invalid meta json"))
 		return
 	}
 
@@ -62,7 +68,8 @@ func (h *DocsHandler) HandleUploadDoc(w http.ResponseWriter, r *http.Request) {
 	if meta.File {
 		file, header, err := r.FormFile("file")
 		if err != nil {
-			http.Error(w, "file is required", http.StatusBadRequest)
+			h.logger.Error.Print("file is required but missing")
+			utils.WriteJSON(w, http.StatusBadRequest, utils.ErrorResp("file is required"))
 			return
 		}
 		defer file.Close()
@@ -73,19 +80,21 @@ func (h *DocsHandler) HandleUploadDoc(w http.ResponseWriter, r *http.Request) {
 
 	doc, err := h.svc.Create(r.Context(), &meta, fileName, fileData, jsonData, token)
 	if err != nil {
-		http.Error(w, "cannot create document", http.StatusInternalServerError)
+		h.logger.Error.Printf("failed to create document: %v", err)
+		utils.WriteJSON(w, http.StatusInternalServerError, utils.ErrorResp("cannot create document"))
 		return
 	}
 
-	utils.WriteJSON(w, http.StatusOK, utils.ToDocDetailResponse(*doc))
+	h.logger.Info.Printf("document uploaded: %s by token %s", doc.ID, token)
+	utils.WriteJSON(w, http.StatusOK, utils.DocDetail(*doc))
 }
 
 func (h *DocsHandler) HandleListDocs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
 	token := r.URL.Query().Get("token")
 	if token == "" {
-		http.Error(w, "token required", http.StatusBadRequest)
+		h.logger.Error.Print("list attempt without token")
+		utils.WriteJSON(w, http.StatusBadRequest, utils.ErrorResp("token required"))
 		return
 	}
 
@@ -102,52 +111,58 @@ func (h *DocsHandler) HandleListDocs(w http.ResponseWriter, r *http.Request) {
 
 	docs, err := h.svc.List(ctx, token, login, key, value, limit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
+		h.logger.Error.Printf("failed to list documents: %v", err)
+		utils.WriteJSON(w, http.StatusForbidden, utils.ErrorResp(err.Error()))
 		return
 	}
 
-	utils.WriteJSON(w, http.StatusOK, utils.ToDocsListResponse(docs))
+	h.logger.Info.Printf("documents listed by token %s, count: %d", token, len(docs))
+	utils.WriteJSON(w, http.StatusOK, utils.DocsList(docs))
 }
 
 func (h *DocsHandler) HandleGetDoc(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := mux.Vars(r)["id"]
-
 	token := r.URL.Query().Get("token")
 	if token == "" {
-		http.Error(w, "token required", http.StatusBadRequest)
+		h.logger.Error.Print("get document attempt without token")
+		utils.WriteJSON(w, http.StatusBadRequest, utils.ErrorResp("token required"))
 		return
 	}
 
 	doc, err := h.svc.GetByID(ctx, id, token)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
+		h.logger.Error.Printf("failed to get document %s: %v", id, err)
+		utils.WriteJSON(w, http.StatusForbidden, utils.ErrorResp(err.Error()))
 		return
 	}
 
+	h.logger.Info.Printf("document retrieved: %s by token %s", id, token)
 	if doc.File {
 		w.Header().Set("Content-Type", doc.Mime)
 		http.ServeFile(w, r, doc.FilePath)
 		return
 	}
 
-	utils.WriteJSON(w, http.StatusOK, utils.ToDocDetailResponse(*doc))
+	utils.WriteJSON(w, http.StatusOK, utils.DocDetail(*doc))
 }
 
 func (h *DocsHandler) HandleDeleteDoc(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := mux.Vars(r)["id"]
-
 	token := r.URL.Query().Get("token")
 	if token == "" {
-		http.Error(w, "token required", http.StatusBadRequest)
+		h.logger.Error.Print("delete attempt without token")
+		utils.WriteJSON(w, http.StatusBadRequest, utils.ErrorResp("token required"))
 		return
 	}
 
 	if err := h.svc.Delete(ctx, id, token); err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
+		h.logger.Error.Printf("failed to delete document %s: %v", id, err)
+		utils.WriteJSON(w, http.StatusForbidden, utils.ErrorResp(err.Error()))
 		return
 	}
 
-	utils.WriteJSON(w, http.StatusOK, utils.ToDeleteResponse(id))
+	h.logger.Info.Printf("document deleted: %s by token %s", id, token)
+	utils.WriteJSON(w, http.StatusOK, utils.DeleteResp(id))
 }

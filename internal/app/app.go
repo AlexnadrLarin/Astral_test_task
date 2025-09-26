@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,6 +15,7 @@ import (
 	routes "docs_storage/internal/delivery/http/routes"
 	service "docs_storage/internal/service"
 	db "docs_storage/pkg/db"
+	logger "docs_storage/pkg/logger"
 	repository "docs_storage/internal/repository"
 	storage "docs_storage/internal/storage"
 )
@@ -23,11 +23,14 @@ import (
 type App struct {
 	server *http.Server	
 	config *Config
+	logger *logger.Logger
 }
 
 func NewApp(config *Config) *App {
+	l := logger.New(os.Stdout, os.Stderr)
 	app := &App{
 		config: config,
+		logger: l,
 	}
 
 	return app
@@ -46,7 +49,8 @@ func (a *App) Run() error {
 		SSLMode:  a.config.Postgres.SSLMode,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to initialize postgres: %w", err)
+		a.logger.Error.Println("Failed to initialize postgres:", err)
+		return err
 	}
 	defer postgres.Close()
 
@@ -59,8 +63,8 @@ func (a *App) Run() error {
 	docsSvc := service.NewDocsService(docsRepo, fileStorage, sessionRepo)
 	authSvc := service.NewAuthService(userRepo, sessionRepo, a.config.Admin.token)
 
-	docsHandler := handlers.NewDocsHandler(docsSvc)
-	authHandler := handlers.NewAuthHandler(authSvc)
+	docsHandler := handlers.NewDocsHandler(docsSvc, a.logger)
+	authHandler := handlers.NewAuthHandler(authSvc, a.logger)
 	
 	router := mux.NewRouter()
 
@@ -77,22 +81,23 @@ func (a *App) Run() error {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		log.Printf("Starting server on %s", serverAddr)
+		a.logger.Info.Printf("Starting server on %s", serverAddr)
 		if err := a.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Error starting server: %v", err)
+			a.logger.Error.Fatalf("Error starting server: %v", err)
 		}
 	}()
 
 	<-quit
-	log.Println("Shutting down server...")
+	a.logger.Info.Println("Shutting down server...")
 
 	ctx, cancel = context.WithTimeout(ctx, time.Duration(a.config.Server.ShutdownTimeout)*time.Second)
 	defer cancel()
 
 	if err := a.server.Shutdown(ctx); err != nil {
-		return fmt.Errorf("server forced to shutdown: %w", err)
+		a.logger.Error.Println("Server forced to shutdown:", err)
+		return err
 	}
 
-	log.Println("Server exited properly")
+	a.logger.Info.Println("Server exited properly")
 	return nil
 }
