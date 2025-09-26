@@ -6,10 +6,11 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig
-	Postgres PostgresConfig
-	Admin    AdminConfig
-	Cache    CacheConfig
+	Server      ServerConfig
+	Postgres    PostgresConfig
+	Admin       AdminConfig
+	Cache       CacheConfig
+	FileStorage FileStorageConfig
 }
 
 type ServerConfig struct {
@@ -33,6 +34,10 @@ type AdminConfig struct {
 
 type CacheConfig struct {
 	capacity int
+}
+
+type FileStorageConfig struct {
+	path string
 }
 
 func LoadConfig() (*Config, error) {
@@ -81,6 +86,10 @@ func loadEnvVars(config *Config) {
 		if capacity, err := strconv.Atoi(envVal); err == nil {
 			config.Cache.capacity = capacity
 		}
+	}
+
+	if envVal := os.Getenv("FILE_STORAGE_PATH"); envVal != "" {
+		config.FileStorage.path = envVal
 	}
 
 	if envVal := os.Getenv("ADMIN_TOKEN"); envVal != "" {

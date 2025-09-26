@@ -59,7 +59,7 @@ func (a *App) Run() error {
 	userRepo := repository.NewUserRepo(postgres.Pool)
 	sessionRepo := repository.NewSessionRepo(postgres.Pool)
 
-	fileStorage := storage.NewLocalFileStorage("/app/files")
+	fileStorage := storage.NewLocalFileStorage(a.config.FileStorage.path)
 	cache := cache.NewLFUCache(a.config.Cache.capacity)
 
 	docsSvc := service.NewDocsService(docsRepo, fileStorage, sessionRepo, cache)
