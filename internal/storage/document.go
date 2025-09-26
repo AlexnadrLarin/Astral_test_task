@@ -20,3 +20,10 @@ func (s *LocalFileStorage) Save(fileName string, data []byte) (string, error) {
 	}
 	return path, nil
 }
+
+func (s *LocalFileStorage) Delete(filePath string) error {
+	if filePath == "" {
+		return nil
+	}
+	return os.Remove(filePath)
+}

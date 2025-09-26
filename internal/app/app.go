@@ -51,15 +51,21 @@ func (a *App) Run() error {
 	defer postgres.Close()
 
 	docsRepo := repository.NewDocsRepo(postgres.Pool)
+	userRepo := repository.NewUserRepo(postgres.Pool)
+	sessionRepo := repository.NewSessionRepo(postgres.Pool)
+
 	fileStorage := storage.NewLocalFileStorage("/app/files")
 
-	docsSvc := service.NewDocsService(docsRepo, fileStorage)
+	docsSvc := service.NewDocsService(docsRepo, fileStorage, sessionRepo)
+	authSvc := service.NewAuthService(userRepo, sessionRepo, a.config.Admin.token)
 
 	docsHandler := handlers.NewDocsHandler(docsSvc)
+	authHandler := handlers.NewAuthHandler(authSvc)
 	
 	router := mux.NewRouter()
 
-	routes.SetupRoutes(router, docsHandler)
+	routes.SetupDocsRoutes(router, docsHandler)
+	routes.SetupAuthRoutes(router, authHandler)
 	
 	serverAddr := fmt.Sprintf("%s:%d", a.config.Server.Host, a.config.Server.Port)
 

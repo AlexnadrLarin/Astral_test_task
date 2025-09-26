@@ -6,23 +6,28 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig   
-	Postgres PostgresConfig 
+	Server   ServerConfig
+	Postgres PostgresConfig
+	Admin    AdminConfig
 }
 
 type ServerConfig struct {
-	Port            int    
-	Host            string 
-	ShutdownTimeout int    
+	Port            int
+	Host            string
+	ShutdownTimeout int
 }
 
 type PostgresConfig struct {
-	Host     string 
-	Port     int    
-	Username string 
-	Password string 
-	DBName   string 
-	SSLMode  string 
+	Host     string
+	Port     int
+	Username string
+	Password string
+	DBName   string
+	SSLMode  string
+}
+
+type AdminConfig struct {
+	token string
 }
 
 func LoadConfig() (*Config, error) {
@@ -65,5 +70,9 @@ func loadEnvVars(config *Config) {
 	}
 	if envVal := os.Getenv("POSTGRES_SSL_MODE"); envVal != "" {
 		config.Postgres.SSLMode = envVal
+	}
+
+	if envVal := os.Getenv("ADMIN_TOKEN"); envVal != "" {
+		config.Admin.token = envVal
 	}
 }
