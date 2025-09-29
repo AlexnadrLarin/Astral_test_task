@@ -11,11 +11,6 @@ CREATE TABLE IF NOT EXISTS documents (
     file_path    TEXT
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS documents_file_path_unique
-    ON documents (file_path)
-    WHERE file_path IS NOT NULL;
-
-
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     login TEXT UNIQUE NOT NULL,
