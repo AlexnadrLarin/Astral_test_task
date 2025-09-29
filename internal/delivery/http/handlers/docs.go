@@ -10,7 +10,7 @@ import (
 	"github.com/gorilla/mux"
 
 	models "docs_storage/internal/models"
-	"docs_storage/internal/utils"
+	utils "docs_storage/internal/utils"
 	"docs_storage/pkg/logger"
 )
 
@@ -31,7 +31,7 @@ func NewDocsHandler(svc docsService, log *logger.Logger) *DocsHandler {
 }
 
 func (h *DocsHandler) HandleUploadDoc(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
+	token := utils.ExtractToken(r)
 	if token == "" {
 		h.logger.Error.Print("upload attempt without token")
 		utils.WriteJSON(w, http.StatusBadRequest, utils.ErrorResp("token required"))
@@ -91,7 +91,7 @@ func (h *DocsHandler) HandleUploadDoc(w http.ResponseWriter, r *http.Request) {
 
 func (h *DocsHandler) HandleListDocs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	token := r.URL.Query().Get("token")
+	token := utils.ExtractToken(r)
 	if token == "" {
 		h.logger.Error.Print("list attempt without token")
 		utils.WriteJSON(w, http.StatusBadRequest, utils.ErrorResp("token required"))
@@ -123,7 +123,7 @@ func (h *DocsHandler) HandleListDocs(w http.ResponseWriter, r *http.Request) {
 func (h *DocsHandler) HandleGetDoc(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := mux.Vars(r)["id"]
-	token := r.URL.Query().Get("token")
+	token := utils.ExtractToken(r)
 	if token == "" {
 		h.logger.Error.Print("get document attempt without token")
 		utils.WriteJSON(w, http.StatusBadRequest, utils.ErrorResp("token required"))
@@ -150,7 +150,7 @@ func (h *DocsHandler) HandleGetDoc(w http.ResponseWriter, r *http.Request) {
 func (h *DocsHandler) HandleDeleteDoc(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := mux.Vars(r)["id"]
-	token := r.URL.Query().Get("token")
+	token := utils.ExtractToken(r)
 	if token == "" {
 		h.logger.Error.Print("delete attempt without token")
 		utils.WriteJSON(w, http.StatusBadRequest, utils.ErrorResp("token required"))
